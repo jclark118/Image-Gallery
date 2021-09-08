@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer name="IMAGE_GALLERY_REQUEST_CODE">2</integer>
+    <integer name="REQUEST_ID_MULTIPLE_PERMISSIONS">3</integer>
+</resources>
