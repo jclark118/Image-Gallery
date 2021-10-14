@@ -12,23 +12,32 @@ import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import com.google.android.material.button.MaterialButton;
 
+import java.io.File;
+import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public class PlaceGalleryActivity extends AppCompatActivity {
 
@@ -36,6 +45,45 @@ public class PlaceGalleryActivity extends AppCompatActivity {
     private MaterialButton addPicButton;
     private static final int REQUEST_ID_MULTIPLE_PERMISSIONS = 3;
     private ImageView previewImage;
+    private Uri cameraAppUri;
+    private ActivityResultLauncher<String> getImageFromGallery = registerForActivityResult(new ActivityResultContracts.GetContent(),
+            new ActivityResultCallback<Uri>() {
+                @Override
+                public void onActivityResult(Uri uri) {
+                    if(uri != null) {
+                        try {
+                            ParcelFileDescriptor parcelFileDescriptor =
+                                    getContentResolver().openFileDescriptor(uri, "r");
+                            FileDescriptor fileDescriptor = parcelFileDescriptor.getFileDescriptor();
+                            Bitmap image = BitmapFactory.decodeFileDescriptor(fileDescriptor);
+                            previewImage.setImageBitmap(image);
+                            parcelFileDescriptor.close();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            });
+    private ActivityResultLauncher<Uri> getImageFromCamera = registerForActivityResult(new ActivityResultContracts.TakePicture(),
+            new ActivityResultCallback<Boolean>() {
+                @Override
+                public void onActivityResult(Boolean result) {
+                    if(result){
+                        if(cameraAppUri != null) {
+                            try {
+                                ParcelFileDescriptor parcelFileDescriptor =
+                                        getContentResolver().openFileDescriptor(cameraAppUri, "r");
+                                FileDescriptor fileDescriptor = parcelFileDescriptor.getFileDescriptor();
+                                Bitmap image = BitmapFactory.decodeFileDescriptor(fileDescriptor);
+                                previewImage.setImageBitmap(image);
+                                parcelFileDescriptor.close();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                }
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,9 +96,7 @@ public class PlaceGalleryActivity extends AppCompatActivity {
         addPicButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if(checkAndRequestPermissions(PlaceGalleryActivity.this)){
                     chooseImage(PlaceGalleryActivity.this);
-                }
             }
         });
 
@@ -89,13 +135,25 @@ public class PlaceGalleryActivity extends AppCompatActivity {
             public void onClick(DialogInterface dialogInterface, int i) {
                 if(optionsMenu[i].equals("Take Photo")){
                     // Open the camera and get the photo
-                    Intent takePicture = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
-                    startActivityForResult(takePicture, 0);
+                    String fileName = "image_gallery_";
+                    File outputDir = getCacheDir();
+                    File file;
+                    try{
+                        file = File.createTempFile( fileName, ".jpg", outputDir );
+                        cameraAppUri = FileProvider.getUriForFile(
+                                Objects.requireNonNull(getApplicationContext()),
+                                BuildConfig.APPLICATION_ID + ".fileProvider", file );
+                    } catch( IllegalArgumentException e ) {
+                        return;
+                    } catch( IOException e ) {
+                        Log.e("Error creating files: ", e.toString());
+                        return;
+                    }
+                    getImageFromCamera.launch(cameraAppUri);
                 }
                 else if(optionsMenu[i].equals("Choose from Gallery")){
                     // choose from  external storage
-                    Intent pickPhoto = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-                    startActivityForResult(pickPhoto , 1);
+                    getImageFromGallery.launch("image/*");
                 }
                 else if (optionsMenu[i].equals("Exit")) {
                     dialogInterface.dismiss();
@@ -148,39 +206,6 @@ public class PlaceGalleryActivity extends AppCompatActivity {
                     chooseImage(PlaceGalleryActivity.this);
                 }
                 break;
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != RESULT_CANCELED) {
-            switch (requestCode) {
-                case 0:
-                    if (resultCode == RESULT_OK && data != null) {
-                        Bitmap selectedImage = (Bitmap) data.getExtras().get("data");
-                        previewImage.setImageBitmap(selectedImage);
-                    }
-                    break;
-                case 1:
-                    if (resultCode == RESULT_OK && data != null) {
-                        Uri selectedImage = data.getData();
-                        String[] filePathColumn = {MediaStore.Images.Media.DATA};
-                        if (selectedImage != null) {
-                            Cursor cursor = getContentResolver().query(selectedImage, filePathColumn, null, null, null);
-                            if (cursor != null) {
-                                cursor.moveToFirst();
-
-                                int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
-                                String picturePath = cursor.getString(columnIndex);
-                                previewImage.setImageBitmap(BitmapFactory.decodeFile(picturePath));
-                                cursor.close();
-                            }
-                        }
-
-                    }
-                    break;
-            }
         }
     }
 }
